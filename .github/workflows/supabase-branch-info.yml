@@ -32,7 +32,7 @@ jobs:
             echo "Supabase directory found"
 
             # Try to get branch info if logged in
-            if supabase branches list --experimental 2>/dev/null; then
+            if supabase branches list --experimental; then
               echo "Branch list retrieved successfully"
             else
               echo "Unable to retrieve branch list - may need authentication"
