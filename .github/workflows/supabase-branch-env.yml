@@ -140,10 +140,10 @@ jobs:
           if [ -f .supabase_branch_env ]; then
             echo "Deploying with Supabase branch environment variables"
             # Convert env file to Vercel -e flags using xargs and capture deployment URL
-            DEPLOYMENT_URL=$(grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | xargs vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --target=preview --skip-domain $VERCEL_ENV_VARS)
+            DEPLOYMENT_URL=$(grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | xargs vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --target=preview --skip-domain $VERCEL_ENV_VARS)
           else
             echo "Deploying without Supabase branch environment variables"
-            DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --target=preview --skip-domain $VERCEL_ENV_VARS)
+            DEPLOYMENT_URL=$(vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --target=preview --skip-domain $VERCEL_ENV_VARS)
           fi
 
           echo "Deployment URL: $DEPLOYMENT_URL"
