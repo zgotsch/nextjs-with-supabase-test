@@ -2,9 +2,8 @@ name: Get Supabase Branch Environment and Deploy
 
 on:
   push:
-    branches: [main, add_color]
-  pull_request:
-    branches: [main]
+    branches-ignore:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -34,7 +33,7 @@ jobs:
 
             # Get branch env and output to file
             echo "Getting branch env for: ${GITHUB_REF_NAME}"
-            if supabase branches get "${GITHUB_REF_NAME}" --experimental -o env > .supabase_branch_env 2>&1; then
+            if supabase branches get "${GITHUB_REF_NAME}" --experimental -o env > .supabase_branch_env; then
               echo "Branch env retrieved successfully and saved to .supabase_branch_env"
 
               # Add NEXT_PUBLIC_ versions of SUPABASE_URL and SUPABASE_ANON_KEY
@@ -52,8 +51,8 @@ jobs:
               cat .supabase_branch_env
             else
               echo "Unable to retrieve branch env - branch may not exist or authentication may be needed"
-              echo "Error output:"
-              cat .supabase_branch_env
+              # Remove any created file since the command failed
+              rm -f .supabase_branch_env
             fi
           else
             echo "No supabase directory found in repository"
