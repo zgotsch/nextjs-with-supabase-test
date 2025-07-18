@@ -71,6 +71,7 @@ jobs:
             set +a
           fi
 
+          vercel pull --yes
           vercel build
 
       - name: Deploy to Vercel
