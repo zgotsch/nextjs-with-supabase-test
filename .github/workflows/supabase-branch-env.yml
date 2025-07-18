@@ -4,15 +4,46 @@ on:
   push:
     branches-ignore:
       - main
+  issue_comment:
+    types: [created, edited]
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Only run on push events, workflow_dispatch, or when supabase bot comments with all check marks
+    if: |
+      github.event_name == 'push' || 
+      github.event_name == 'workflow_dispatch' || 
+      (github.event_name == 'issue_comment' && 
+       github.event.issue.pull_request && 
+       github.event.comment.user.login == 'supabase[bot]' &&
+       contains(github.event.comment.body, '| Database    | ✅ |') &&
+       contains(github.event.comment.body, '| Services    | ✅  |') &&
+       contains(github.event.comment.body, '| APIs        | ✅      |') &&
+       contains(github.event.comment.body, '| Configurations | ✅ |') &&
+       contains(github.event.comment.body, '| Migrations     | ✅ |') &&
+       contains(github.event.comment.body, '| Seeding        | ✅   |') &&
+       contains(github.event.comment.body, '| Edge Functions | ✅  |'))
 
     steps:
+      - name: Set branch name
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUMBER=${{ github.event.issue.number }}
+            BRANCH=$(gh pr view $PR_NUMBER --json headRefName --jq '.headRefName')
+            echo "name=$BRANCH" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && steps.branch.outputs.name || github.ref }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -25,15 +56,15 @@ jobs:
       - name: Log Supabase branch info
         run: |
           echo "Checking for Supabase branch information..."
-          echo "Current Git branch: ${GITHUB_REF_NAME}"
+          echo "Target branch: ${{ steps.branch.outputs.name }}"
 
           # Check if supabase directory exists
           if [ -d "supabase" ]; then
             echo "Supabase directory found"
 
             # Get branch env and output to file
-            echo "Getting branch env for: ${GITHUB_REF_NAME}"
-            if supabase branches get "${GITHUB_REF_NAME}" --experimental -o env > .supabase_branch_env; then
+            echo "Getting branch env for: ${{ steps.branch.outputs.name }}"
+            if supabase branches get "${{ steps.branch.outputs.name }}" --experimental -o env > .supabase_branch_env; then
               echo "Branch env retrieved successfully and saved to .supabase_branch_env"
 
               # Add NEXT_PUBLIC_ versions of SUPABASE_URL and SUPABASE_ANON_KEY
@@ -89,14 +120,14 @@ jobs:
       - name: Deploy to Vercel
         run: |
           # Create a deployment name based on branch and commit
-          DEPLOYMENT_NAME="${GITHUB_REF_NAME}-${GITHUB_SHA::7}"
+          DEPLOYMENT_NAME="${{ steps.branch.outputs.name }}-${GITHUB_SHA::7}"
           echo "Deployment name: $DEPLOYMENT_NAME"
 
           # Deploy with env vars from .supabase_branch_env if it exists
           if [ -f .supabase_branch_env ]; then
             echo "Deploying with Supabase branch environment variables"
             # Convert env file to Vercel -e flags using xargs
-            grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | xargs vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --target=preview -e VERCEL_GIT_COMMIT_REF=${GITHUB_REF_NAME} -e VERCEL_GIT_COMMIT_SHA=${GITHUB_SHA} -e VERCEL_GIT_COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+            grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | xargs vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --target=preview -e VERCEL_GIT_COMMIT_REF=${{ steps.branch.outputs.name }} -e VERCEL_GIT_COMMIT_SHA=${GITHUB_SHA}
           else
             echo "Deploying without Supabase branch environment variables"
             vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --target=preview
