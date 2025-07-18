@@ -1,0 +1,98 @@
+name: Get Supabase Branch Environment and Deploy
+
+on:
+  push:
+    branches: [main, add_color]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Check Supabase CLI version
+        run: supabase --version
+
+      - name: Log Supabase branch info
+        run: |
+          echo "Checking for Supabase branch information..."
+          echo "Current Git branch: ${GITHUB_REF_NAME}"
+          
+          # Check if supabase directory exists
+          if [ -d "supabase" ]; then
+            echo "Supabase directory found"
+            
+            # Get branch env and output to file
+            echo "Getting branch env for: ${GITHUB_REF_NAME}"
+            if supabase branches get "${GITHUB_REF_NAME}" --experimental -o env > .supabase_branch_env 2>&1; then
+              echo "Branch env retrieved successfully and saved to .supabase_branch_env"
+              echo "Contents of .supabase_branch_env:"
+              cat .supabase_branch_env
+            else
+              echo "Unable to retrieve branch env - branch may not exist or authentication may be needed"
+              echo "Error output:"
+              cat .supabase_branch_env
+            fi
+          else
+            echo "No supabase directory found in repository"
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+      
+      - name: Build application
+        run: |
+          # Source the env file if it exists
+          if [ -f .supabase_branch_env ]; then
+            echo "Loading Supabase branch environment variables"
+            set -a
+            source .supabase_branch_env
+            set +a
+          fi
+          
+          # Build the Next.js app
+          npm run build
+      
+      - name: Deploy to Vercel
+        run: |
+          # Create a deployment name based on branch and commit
+          DEPLOYMENT_NAME="${GITHUB_REF_NAME}-${GITHUB_SHA::7}"
+          echo "Deployment name: $DEPLOYMENT_NAME"
+          
+          # Load the env file and pass variables to Vercel
+          if [ -f .supabase_branch_env ]; then
+            echo "Deploying with Supabase branch environment variables"
+            # Convert env file to Vercel env flags
+            ENV_FLAGS=""
+            while IFS='=' read -r key value; do
+              if [[ ! -z "$key" && ! "$key" =~ ^# ]]; then
+                ENV_FLAGS="$ENV_FLAGS -e $key=\"$value\""
+              fi
+            done < .supabase_branch_env
+            
+            vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --env=preview $ENV_FLAGS
+          else
+            echo "Deploying without Supabase branch environment variables"
+            vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --env=preview
+          fi
