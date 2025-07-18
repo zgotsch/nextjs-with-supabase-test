@@ -172,7 +172,7 @@ jobs:
           **Deployment URL:** $DEPLOYMENT_URL
 
           **Branch:** \`${{ steps.branch.outputs.name }}\`
-          **Commit:** \`${GITHUB_SHA::7}\`
+          **Commit:** [\`${GITHUB_SHA::7}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
           **Triggered by:** ${{ github.event_name == 'issue_comment' && 'Supabase environment ready' || 'PR updated' }}
 
           EOF
