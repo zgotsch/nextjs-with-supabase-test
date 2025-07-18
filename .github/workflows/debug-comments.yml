@@ -1,0 +1,52 @@
+name: Debug Issue Comments
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  debug-comment:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Debug comment info
+        run: |
+          echo "=== EVENT INFO ==="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Action: ${{ github.event.action }}"
+          
+          echo "=== COMMENT INFO ==="
+          echo "Comment ID: ${{ github.event.comment.id }}"
+          echo "Comment user: ${{ github.event.comment.user.login }}"
+          echo "Comment user type: ${{ github.event.comment.user.type }}"
+          echo "Comment created: ${{ github.event.comment.created_at }}"
+          echo "Comment updated: ${{ github.event.comment.updated_at }}"
+          
+          echo "=== ISSUE INFO ==="
+          echo "Issue number: ${{ github.event.issue.number }}"
+          echo "Issue title: ${{ github.event.issue.title }}"
+          echo "Is pull request: ${{ github.event.issue.pull_request != null }}"
+          echo "Pull request URL: ${{ github.event.issue.pull_request.url }}"
+          
+          echo "=== REPOSITORY INFO ==="
+          echo "Repository: ${{ github.event.repository.name }}"
+          echo "Repository owner: ${{ github.repository_owner }}"
+          
+          echo "=== COMMENT BODY ==="
+          echo "Comment body (first 500 chars):"
+          echo '${{ github.event.comment.body }}' | head -c 500
+          echo ""
+          echo "=== END COMMENT BODY ==="
+          
+          echo "=== CONDITION CHECKS ==="
+          echo "User is supabase[bot]: ${{ github.event.comment.user.login == 'supabase[bot]' }}"
+          echo "Contains Database check: ${{ contains(github.event.comment.body, '| Database    | ✅ |') }}"
+          echo "Contains Services check: ${{ contains(github.event.comment.body, '| Services    | ✅  |') }}"
+          echo "Contains APIs check: ${{ contains(github.event.comment.body, '| APIs        | ✅      |') }}"
+          echo "Contains Configurations check: ${{ contains(github.event.comment.body, '| Configurations | ✅ |') }}"
+          echo "Contains Migrations check: ${{ contains(github.event.comment.body, '| Migrations     | ✅ |') }}"
+          echo "Contains Seeding check: ${{ contains(github.event.comment.body, '| Seeding        | ✅   |') }}"
+          echo "Contains Edge Functions check: ${{ contains(github.event.comment.body, '| Edge Functions | ✅  |') }}"
+          
+          echo "=== FULL COMMENT BODY ==="
+          echo '${{ github.event.comment.body }}'
