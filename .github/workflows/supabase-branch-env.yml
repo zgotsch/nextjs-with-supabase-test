@@ -1,0 +1,199 @@
+name: Deploy Preview (Supabase Branch Environment)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # Only run on pull_request events, workflow_dispatch, or when supabase bot comments with all check marks
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       github.event.comment.user.login == 'supabase[bot]' &&
+       contains(github.event.comment.body, '| Database    | ✅ |') &&
+       contains(github.event.comment.body, '| Services    | ✅  |') &&
+       contains(github.event.comment.body, '| APIs        | ✅      |') &&
+       contains(github.event.comment.body, '| Configurations | ✅ |') &&
+       contains(github.event.comment.body, '| Migrations     | ✅ |') &&
+       contains(github.event.comment.body, '| Seeding        | ✅   |') &&
+       contains(github.event.comment.body, '| Edge Functions | ✅  |'))
+
+    steps:
+      - name: Set branch name and PR number
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUMBER=${{ github.event.issue.number }}
+            BRANCH=$(gh pr view $PR_NUMBER --json headRefName --jq '.headRefName')
+            echo "name=$BRANCH" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "name=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+            echo "pr_number=${{ github.event.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            echo "pr_number=" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && steps.branch.outputs.name || github.ref }}
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Check Supabase CLI version
+        run: supabase --version
+
+      - name: Log Supabase branch info
+        run: |
+          echo "Checking for Supabase branch information..."
+          echo "Target branch: ${{ steps.branch.outputs.name }}"
+
+          # Check if supabase directory exists
+          if [ -d "supabase" ]; then
+            echo "Supabase directory found"
+
+            # Get branch env and output to file
+            echo "Getting branch env for: ${{ steps.branch.outputs.name }}"
+            if supabase branches get "${{ steps.branch.outputs.name }}" --experimental -o env > .supabase_branch_env; then
+              echo "Branch env retrieved successfully and saved to .supabase_branch_env"
+
+              # Add NEXT_PUBLIC_ versions of SUPABASE_URL and SUPABASE_ANON_KEY
+              echo "Adding NEXT_PUBLIC_ versions of env variables..."
+              if grep -q "^SUPABASE_URL=" .supabase_branch_env; then
+                SUPABASE_URL=$(grep "^SUPABASE_URL=" .supabase_branch_env | cut -d'=' -f2-)
+                echo "NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}" >> .supabase_branch_env
+              fi
+              if grep -q "^SUPABASE_ANON_KEY=" .supabase_branch_env; then
+                SUPABASE_ANON_KEY=$(grep "^SUPABASE_ANON_KEY=" .supabase_branch_env | cut -d'=' -f2-)
+                echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" >> .supabase_branch_env
+              fi
+
+              echo "Contents of .supabase_branch_env:"
+              cat .supabase_branch_env
+            else
+              echo "Unable to retrieve branch env - branch may not exist or authentication may be needed"
+              # Remove any created file since the command failed
+              rm -f .supabase_branch_env
+            fi
+          else
+            echo "No supabase directory found in repository"
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Build application
+        run: |
+          vercel pull --environment=preview --token=${{ secrets.VERCEL_TOKEN }} --yes
+
+          # Source the env file if it exists
+          if [ -f .supabase_branch_env ]; then
+            echo "Loading Supabase branch environment variables"
+            set -a
+            source .supabase_branch_env
+            set +a
+          fi
+
+          vercel build
+
+      - name: Deploy to Vercel
+        run: |
+          # Get the correct commit SHA for metadata
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            # For issue_comment events, get the PR head SHA
+            COMMIT_SHA=$(gh pr view ${{ steps.branch.outputs.pr_number }} --json headRefOid --jq '.headRefOid')
+          fi
+
+          # Set GitHub metadata for Vercel
+          COMMIT_MESSAGE="${{ github.event.head_commit.message || github.event.comment.body || 'Deploy from GitHub Action' }}"
+          AUTHOR_NAME="${{ github.event.head_commit.author.name || github.actor }}"
+
+          # Build meta flags
+          META_FLAGS="--meta githubCommitAuthorName='$AUTHOR_NAME' \
+            --meta githubCommitMessage='$COMMIT_MESSAGE' \
+            --meta githubCommitOrg=${{ github.repository_owner }} \
+            --meta githubCommitRef=${{ steps.branch.outputs.name }} \
+            --meta githubCommitRepo=${{ github.event.repository.name }} \
+            --meta githubCommitSha=$COMMIT_SHA \
+            --meta githubDeployment=1 \
+            --meta githubOrg=${{ github.repository_owner }} \
+            --meta githubRepo=${{ github.event.repository.name }} \
+            --meta githubCommitAuthorLogin=${{ github.actor }}"
+
+          # Deploy with env vars from .supabase_branch_env if it exists
+          if [ -f .supabase_branch_env ]; then
+            echo "Deploying with Supabase branch environment variables"
+            # Build the full command with all env vars
+            SUPABASE_ENV_FLAGS=$(grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | tr '\n' ' ')
+            DEPLOYMENT_URL=$(eval "vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --target=preview $META_FLAGS $SUPABASE_ENV_FLAGS")
+          else
+            echo "Deploying without Supabase branch environment variables"
+            DEPLOYMENT_URL=$(eval "vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --target=preview $META_FLAGS")
+          fi
+
+          echo "Deployment URL: $DEPLOYMENT_URL"
+          
+          # Export deployment URL for use in PR comment
+          echo "DEPLOYMENT_URL=$DEPLOYMENT_URL" >> $GITHUB_ENV
+
+      - name: Comment on PR
+        if: steps.branch.outputs.pr_number != ''
+        run: |
+          # Get the correct commit SHA based on event type
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            COMMIT_SHA="${{ github.sha }}"
+          fi
+          SHORT_SHA=${COMMIT_SHA::7}
+          
+          # Post deployment info to PR
+          COMMENT_BODY=$(cat <<EOF
+          ## 🚀 Deployment Complete
+
+          Your Supabase branch environment has been deployed successfully!
+
+          **Deployment URL:** $DEPLOYMENT_URL
+
+          **Branch:** \`${{ steps.branch.outputs.name }}\`
+          **Commit:** [\`$SHORT_SHA\`](https://github.com/${{ github.repository }}/commit/$COMMIT_SHA)
+          **Triggered by:** ${{ github.event_name == 'issue_comment' && 'Supabase environment ready' || 'PR updated' }}
+
+          EOF
+          )
+          
+          gh pr comment ${{ steps.branch.outputs.pr_number }} --body "$COMMENT_BODY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
