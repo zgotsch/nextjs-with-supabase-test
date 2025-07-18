@@ -152,4 +152,4 @@ jobs:
           # Create branch-based alias (similar to GitHub integration)
           BRANCH_ALIAS="${{ steps.branch.outputs.name }}-${{ github.event.repository.name }}.vercel.app"
           echo "Setting alias: $BRANCH_ALIAS"
-          vercel alias set "$DEPLOYMENT_URL" "$BRANCH_ALIAS" --token=${{ secrets.VERCEL_TOKEN }} --yes || echo "Failed to set alias (may require project domain configuration)"
+          vercel alias set "$DEPLOYMENT_URL" "$BRANCH_ALIAS" --token=${{ secrets.VERCEL_TOKEN }} || echo "Failed to set alias (may require project domain configuration)"
