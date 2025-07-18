@@ -63,6 +63,8 @@ jobs:
 
       - name: Build application
         run: |
+          vercel pull --token=${{ secrets.VERCEL_TOKEN }} --yes
+
           # Source the env file if it exists
           if [ -f .supabase_branch_env ]; then
             echo "Loading Supabase branch environment variables"
@@ -71,7 +73,6 @@ jobs:
             set +a
           fi
 
-          vercel pull --token=${{ secrets.VERCEL_TOKEN }} --yes
           vercel build
 
       - name: Deploy to Vercel
@@ -84,8 +85,8 @@ jobs:
           if [ -f .supabase_branch_env ]; then
             echo "Deploying with Supabase branch environment variables"
             # Convert env file to Vercel -e flags using xargs
-            grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | xargs vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --env=preview
+            grep -v '^#' .supabase_branch_env | grep -v '^$' | sed 's/^/-e /' | xargs vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --target=preview
           else
             echo "Deploying without Supabase branch environment variables"
-            vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --env=preview
+            vercel --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --yes --name=$DEPLOYMENT_NAME --target=preview
           fi
