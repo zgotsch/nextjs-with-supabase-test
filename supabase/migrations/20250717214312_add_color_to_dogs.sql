@@ -1,0 +1,2 @@
+ALTER TABLE dogs
+ADD COLUMN color TEXT;
