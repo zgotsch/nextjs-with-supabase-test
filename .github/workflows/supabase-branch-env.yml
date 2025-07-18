@@ -105,7 +105,7 @@ jobs:
 
       - name: Build application
         run: |
-          vercel pull --token=${{ secrets.VERCEL_TOKEN }} --yes
+          vercel pull --environment=preview --token=${{ secrets.VERCEL_TOKEN }} --yes
 
           # Source the env file if it exists
           if [ -f .supabase_branch_env ]; then
