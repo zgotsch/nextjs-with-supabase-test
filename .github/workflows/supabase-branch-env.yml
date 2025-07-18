@@ -36,6 +36,18 @@ jobs:
             echo "Getting branch env for: ${GITHUB_REF_NAME}"
             if supabase branches get "${GITHUB_REF_NAME}" --experimental -o env > .supabase_branch_env 2>&1; then
               echo "Branch env retrieved successfully and saved to .supabase_branch_env"
+
+              # Add NEXT_PUBLIC_ versions of SUPABASE_URL and SUPABASE_ANON_KEY
+              echo "Adding NEXT_PUBLIC_ versions of env variables..."
+              if grep -q "^SUPABASE_URL=" .supabase_branch_env; then
+                SUPABASE_URL=$(grep "^SUPABASE_URL=" .supabase_branch_env | cut -d'=' -f2-)
+                echo "NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}" >> .supabase_branch_env
+              fi
+              if grep -q "^SUPABASE_ANON_KEY=" .supabase_branch_env; then
+                SUPABASE_ANON_KEY=$(grep "^SUPABASE_ANON_KEY=" .supabase_branch_env | cut -d'=' -f2-)
+                echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" >> .supabase_branch_env
+              fi
+
               echo "Contents of .supabase_branch_env:"
               cat .supabase_branch_env
             else
